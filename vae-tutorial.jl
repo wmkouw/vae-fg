@@ -8,13 +8,15 @@ using CUDAapi: has_cuda_gpu
 using ProgressMeter: Progress, next!
 using Plots
 using PyPlot
+include("util.jl")
+
 
 # Experimental parameters
 batch_size = 256
 input_dim = 28^2
 hidden_dim = 500
 latent_dim = 2
-num_epochs = 3
+num_epochs = 10
 learning_rate = 1e-3
 regularization_param = 0.01
 
@@ -38,19 +40,6 @@ D,N = size(X)
 
 # Start DataLoader
 data = DataLoader(X,Y, batchsize=batch_size, shuffle=true)
-
-# function encoder(; input_dim=2, hidden_dim=3, latent_dim=1, nonlinearity=tanh, device=cpu)
-#     "Mapping from observed space to latent space"
-#
-#     # Map input to hidden layer
-#     h = Dense(input_dim, hidden_dim, nonlinearity) |> device
-#
-#     # Map hidden layer activity to mean and log-variance
-#     μ = Chain(h, Dense(hidden_dim, latent_dim, nonlinearity)) |> device
-#     logσ = Chain(h, Dense(hidden_dim, latent_dim, nonlinearity)) |> device
-#
-#     return μ, logσ
-# end
 
 struct Encoder
     linear
@@ -95,8 +84,6 @@ function reconstruct(x, encoder, decoder; device=cpu)
     input_dim, num_samples = size(x)
 
     # Encode samples
-    # μ = encoder[1](x)
-    # logσ = encoder[2](x)
     μ, logσ = encoder(x)
 
     # Dimensionality of latent space
@@ -115,10 +102,10 @@ function loss(encoder, decoder, x; regularization_param=0.01, device=cpu)
     μ, logσ, z = reconstruct(x, encoder, decoder, device=device)
 
     # KL-divergence
-    divergence = 0.5 * sum(@. (exp(2. *logσ) + μ^2 -1. - 2. *logσ)) / N
+    divergence = 0.5 * sum(@. (exp(2. *logσ) + μ^2 -1. - 2. *logσ))
 
     # Reconstruction error
-    logp_x_z = -sum(logitbinarycrossentropy.(z, x)) / N
+    logp_x_z = -sum(logitbinarycrossentropy.(z, x))
 
     # regularization
     regularization = regularization_param * sum(x->sum(x.^2), Flux.params(decoder))
@@ -166,22 +153,14 @@ end
 # Save model
 BSON.@save "output/model.bson" enc dec ps
 
-# Take first batch of images
+# Take first batch of images and map to image collage
 x = first(data)[1]
+img_x = convert_to_image(x, 16)
+PyPlot.imshow(img_x, vmin=0.0, vmax=1.0, cmap="gray")
+PyPlot.savefig("output/collage_x.png")
 
-# Reconstruct images
+# Reconstruct images and map to collage
 _, _, z = reconstruct(x, enc, dec)
-
-i = 1
-
-# Visualize images
-x_i = x[:,i] .- minimum(x[:,i])
-x_i = reshape(x_i ./ maximum(x_i), (28,28))'
-PyPlot.imshow(x_i, vmin=0.0, vmax=1.0)
-PyPlot.savefig("output/x_"*string(i)*".png")
-
-# Visualize reconstructions of images
-z_i = z[:,i] .- minimum(z[:,i])
-z_i = reshape(z_i ./ maximum(z_i), (28,28))'
-PyPlot.imshow(z_i, vmin=0.0, vmax=1.0)
-PyPlot.savefig("output/z_"*string(i)*".png")
+img_z = convert_to_image(z, 16)
+PyPlot.imshow(img_z, vmin=0.0, vmax=1.0, cmap="gray")
+PyPlot.savefig("output/collage_z.png")
